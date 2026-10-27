@@ -1,0 +1,542 @@
+{
+ "et_opts": {
+  "title": "Ethiopia filter choices",
+  "description": "Regions, zones, genders, respondent roles and typology classes in the Ethiopia household data. Reads et_interview_meta.",
+  "params": [],
+  "sql": "SELECT 'region' AS field, admin1_state_region AS value FROM `{DS}.et_interview_meta` WHERE admin1_state_region IS NOT NULL GROUP BY 2\nUNION ALL SELECT 'zone', zone_name FROM `{DS}.et_interview_meta` WHERE zone_name IS NOT NULL GROUP BY 2\nUNION ALL SELECT 'gender', respondent_gender FROM `{DS}.et_interview_meta` WHERE respondent_gender IS NOT NULL GROUP BY 2\nUNION ALL SELECT 'role', respondent_role FROM `{DS}.et_interview_meta` WHERE respondent_role IS NOT NULL GROUP BY 2\nUNION ALL SELECT 'typology', typology FROM `{DS}.et_interview_meta` WHERE typology IS NOT NULL GROUP BY 2\nORDER BY field, value"
+ },
+ "et_tr_hybrid": {
+  "title": "Ethiopia hybrid concept signals",
+  "description": "Among households interested in hybrid wheat: share naming each attribute of interest, first choice and priority index. Reads et_traits and et_interview_meta.",
+  "params": [
+   "et_gender",
+   "et_region",
+   "et_role",
+   "et_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{et_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{et_region}} AS STRING)) AND (CAST({{et_zone}} AS STRING) IS NULL OR zone_name = CAST({{et_zone}} AS STRING))\n    AND (CAST({{et_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{et_gender}} AS STRING)) AND (CAST({{et_role}} AS STRING) IS NULL OR respondent_role = CAST({{et_role}} AS STRING))\n  GROUP BY hhid\n),\ntr AS (SELECT * FROM `{DS}.et_traits` WHERE hhid IN (SELECT hhid FROM hh)),\nv AS (SELECT * FROM tr WHERE domain = 'Hybrid concept attributes'),\nn AS (SELECT COUNT(DISTINCT response_id) AS respondents FROM v)\nSELECT trait_short, ANY_VALUE(n.respondents) AS hybrid_respondents,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(selected, response_id, NULL)), ANY_VALUE(n.respondents)) AS interest_share,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(is_first, response_id, NULL)), ANY_VALUE(n.respondents)) AS first_choice_share,\n  SAFE_DIVIDE(SUM(rank_points), 3 * ANY_VALUE(n.respondents)) AS priority_index\nFROM v, n\nGROUP BY trait_short\nORDER BY priority_index DESC, trait_short"
+ },
+ "et_tr_kpi": {
+  "title": "Ethiopia trait headline figures",
+  "description": "Households ranking variety traits, traits named important per household, the leading trait by priority index and the top three's share of rank points. Reads et_traits and et_interview_meta.",
+  "params": [
+   "et_gender",
+   "et_region",
+   "et_role",
+   "et_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{et_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{et_region}} AS STRING)) AND (CAST({{et_zone}} AS STRING) IS NULL OR zone_name = CAST({{et_zone}} AS STRING))\n    AND (CAST({{et_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{et_gender}} AS STRING)) AND (CAST({{et_role}} AS STRING) IS NULL OR respondent_role = CAST({{et_role}} AS STRING))\n  GROUP BY hhid\n),\ntr AS (SELECT * FROM `{DS}.et_traits` WHERE hhid IN (SELECT hhid FROM hh)),\nv AS (SELECT * FROM tr WHERE domain = 'Variety priorities'),\nn AS (SELECT COUNT(DISTINCT response_id) AS respondents, COUNTIF(selected) AS selected_rows, SUM(rank_points) AS points FROM v),\nt AS (SELECT trait_short, SUM(rank_points) AS points FROM v GROUP BY trait_short),\nlead AS (SELECT trait_short, SAFE_DIVIDE(points, 3 * (SELECT respondents FROM n)) AS idx FROM t ORDER BY idx DESC, trait_short LIMIT 1),\ntop3 AS (SELECT SUM(points) AS p FROM (SELECT points FROM t ORDER BY points DESC, trait_short LIMIT 3))\nSELECT n.respondents AS trait_respondents,\n  SAFE_DIVIDE(n.selected_rows, n.respondents) AS avg_important_traits,\n  (SELECT trait_short FROM lead) AS leading_trait,\n  (SELECT idx FROM lead) AS leader_priority_index,\n  SAFE_DIVIDE((SELECT p FROM top3), n.points) AS top3_concentration\nFROM n"
+ },
+ "et_tr_saved": {
+  "title": "Ethiopia saved-seed evidence",
+  "description": "Per characteristic: share of saved-seed varieties households described as unique for it. Reads et_traits and et_interview_meta.",
+  "params": [
+   "et_gender",
+   "et_region",
+   "et_role",
+   "et_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{et_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{et_region}} AS STRING)) AND (CAST({{et_zone}} AS STRING) IS NULL OR zone_name = CAST({{et_zone}} AS STRING))\n    AND (CAST({{et_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{et_gender}} AS STRING)) AND (CAST({{et_role}} AS STRING) IS NULL OR respondent_role = CAST({{et_role}} AS STRING))\n  GROUP BY hhid\n),\ntr AS (SELECT * FROM `{DS}.et_traits` WHERE hhid IN (SELECT hhid FROM hh)),\nv AS (SELECT * FROM tr WHERE domain = 'Saved-seed evidence'),\nn AS (SELECT COUNT(DISTINCT response_id) AS responses FROM v)\nSELECT trait_short, ANY_VALUE(n.responses) AS saved_seed_responses,\n  COUNT(DISTINCT IF(selected, response_id, NULL)) AS evidence_mentions,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(selected, response_id, NULL)), ANY_VALUE(n.responses)) AS evidence_share\nFROM v, n\nGROUP BY trait_short\nORDER BY evidence_share DESC, trait_short"
+ },
+ "et_tr_variety": {
+  "title": "Ethiopia variety trait priorities",
+  "description": "Per wheat variety trait: rank-weighted priority index (3 points for first, 2 second, 1 third), first-choice, top-three and importance shares. Reads et_traits and et_interview_meta.",
+  "params": [
+   "et_gender",
+   "et_region",
+   "et_role",
+   "et_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{et_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{et_region}} AS STRING)) AND (CAST({{et_zone}} AS STRING) IS NULL OR zone_name = CAST({{et_zone}} AS STRING))\n    AND (CAST({{et_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{et_gender}} AS STRING)) AND (CAST({{et_role}} AS STRING) IS NULL OR respondent_role = CAST({{et_role}} AS STRING))\n  GROUP BY hhid\n),\ntr AS (SELECT * FROM `{DS}.et_traits` WHERE hhid IN (SELECT hhid FROM hh)),\nv AS (SELECT * FROM tr WHERE domain = 'Variety priorities'),\nn AS (SELECT COUNT(DISTINCT response_id) AS respondents FROM v)\nSELECT trait_short, ANY_VALUE(trait_group) AS trait_group, ANY_VALUE(sort_order) AS sort_order,\n  COUNT(DISTINCT IF(selected, response_id, NULL)) AS mentions,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(selected, response_id, NULL)), ANY_VALUE(n.respondents)) AS importance_share,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(is_first, response_id, NULL)), ANY_VALUE(n.respondents)) AS first_choice_share,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(is_ranked, response_id, NULL)), ANY_VALUE(n.respondents)) AS top_three_share,\n  SAFE_DIVIDE(SUM(rank_points), 3 * ANY_VALUE(n.respondents)) AS priority_index\nFROM v, n\nGROUP BY trait_short\nORDER BY priority_index DESC, trait_short"
+ },
+ "et_wtp_gender": {
+  "title": "Ethiopia premium and yield by gender",
+  "description": "Per respondent gender: complete trade-offs, median premium, median extra ETB per quintal and median required yield gain. Reads et_wtp and et_interview_meta.",
+  "params": [
+   "ew_gender",
+   "ew_region",
+   "ew_role",
+   "ew_typology",
+   "ew_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{ew_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{ew_region}} AS STRING)) AND (CAST({{ew_zone}} AS STRING) IS NULL OR zone_name = CAST({{ew_zone}} AS STRING))\n    AND (CAST({{ew_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{ew_gender}} AS STRING)) AND (CAST({{ew_role}} AS STRING) IS NULL OR respondent_role = CAST({{ew_role}} AS STRING)) AND (CAST({{ew_typology}} AS STRING) IS NULL OR typology = CAST({{ew_typology}} AS STRING))\n  GROUP BY hhid\n),\nw AS (SELECT w.*, hh.respondent_gender, hh.region, hh.zone FROM `{DS}.et_wtp` w JOIN hh USING (hhid)),\nwv AS (SELECT * FROM w WHERE wtp_response_valid),\nyv AS (SELECT * FROM w WHERE yield_response_valid),\nx AS (\n  SELECT IFNULL(w.respondent_gender, 'Not recorded') AS gender_label, w.*,\n    PERCENTILE_CONT(IF(wtp_response_valid, wtp_premium, NULL), 0.5) OVER g AS med_premium,\n    PERCENTILE_CONT(IF(wtp_response_valid, maximum_extra_wtp_birr_per_qt, NULL), 0.5) OVER g AS med_extra,\n    PERCENTILE_CONT(IF(yield_response_valid, yield_gain_needed, NULL), 0.5) OVER g AS med_yield\n  FROM w WINDOW g AS (PARTITION BY IFNULL(w.respondent_gender, 'Not recorded'))\n)\nSELECT gender_label AS gender, COUNTIF(tradeoff_response_valid) AS complete_tradeoffs,\n  ANY_VALUE(med_premium) AS median_premium, ANY_VALUE(med_extra) AS median_extra_wtp, ANY_VALUE(med_yield) AS median_yield_gain\nFROM x GROUP BY gender_label ORDER BY gender_label"
+ },
+ "et_wtp_kpi": {
+  "title": "Ethiopia WTP headline figures",
+  "description": "Complete price-and-yield trade-offs, median current seed price, extra amount farmers would pay, implied price ceiling, premium and required yield gain. Reads et_wtp and et_interview_meta.",
+  "params": [
+   "ew_gender",
+   "ew_region",
+   "ew_role",
+   "ew_typology",
+   "ew_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{ew_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{ew_region}} AS STRING)) AND (CAST({{ew_zone}} AS STRING) IS NULL OR zone_name = CAST({{ew_zone}} AS STRING))\n    AND (CAST({{ew_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{ew_gender}} AS STRING)) AND (CAST({{ew_role}} AS STRING) IS NULL OR respondent_role = CAST({{ew_role}} AS STRING)) AND (CAST({{ew_typology}} AS STRING) IS NULL OR typology = CAST({{ew_typology}} AS STRING))\n  GROUP BY hhid\n),\nw AS (SELECT w.*, hh.respondent_gender, hh.region, hh.zone FROM `{DS}.et_wtp` w JOIN hh USING (hhid)),\nwv AS (SELECT * FROM w WHERE wtp_response_valid),\nyv AS (SELECT * FROM w WHERE yield_response_valid)\nSELECT\n  (SELECT COUNTIF(tradeoff_response_valid) FROM w) AS complete_tradeoffs,\n  (SELECT COUNT(*) FROM w) AS eligible,\n  FORMAT(\"%'d / %'d\", (SELECT COUNTIF(tradeoff_response_valid) FROM w), (SELECT COUNT(*) FROM w)) AS complete_eligible,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(current_seed_price_birr_per_qt, 0.5) OVER () AS m FROM wv WHERE TRUE)) AS median_current_price,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(maximum_extra_wtp_birr_per_qt, 0.5) OVER () AS m FROM wv WHERE TRUE)) AS median_extra_wtp,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(implied_hybrid_price_birr_per_qt, 0.5) OVER () AS m FROM wv WHERE TRUE)) AS median_implied_price,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(wtp_premium, 0.5) OVER () AS m FROM wv WHERE TRUE)) AS median_premium,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(yield_gain_needed, 0.5) OVER () AS m FROM yv WHERE TRUE)) AS median_yield_gain,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(wtp_premium, 0.25) OVER () AS m FROM wv WHERE TRUE)) AS premium_p25,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(wtp_premium, 0.75) OVER () AS m FROM wv WHERE TRUE)) AS premium_p75"
+ },
+ "et_wtp_reach": {
+  "title": "Ethiopia farmers at each premium",
+  "description": "Share of farmers with a valid price answer who would pay at least each premium over today's seed price. Reads et_wtp and et_interview_meta.",
+  "params": [
+   "ew_gender",
+   "ew_region",
+   "ew_role",
+   "ew_typology",
+   "ew_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{ew_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{ew_region}} AS STRING)) AND (CAST({{ew_zone}} AS STRING) IS NULL OR zone_name = CAST({{ew_zone}} AS STRING))\n    AND (CAST({{ew_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{ew_gender}} AS STRING)) AND (CAST({{ew_role}} AS STRING) IS NULL OR respondent_role = CAST({{ew_role}} AS STRING)) AND (CAST({{ew_typology}} AS STRING) IS NULL OR typology = CAST({{ew_typology}} AS STRING))\n  GROUP BY hhid\n),\nw AS (SELECT w.*, hh.respondent_gender, hh.region, hh.zone FROM `{DS}.et_wtp` w JOIN hh USING (hhid)),\nwv AS (SELECT * FROM w WHERE wtp_response_valid),\nyv AS (SELECT * FROM w WHERE yield_response_valid)\nSELECT t AS premium_threshold, COUNTIF(wv.wtp_premium >= t) AS farmers,\n  SAFE_DIVIDE(COUNTIF(wv.wtp_premium >= t), (SELECT COUNT(*) FROM wv)) AS reach_share\nFROM UNNEST([0.0, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.00]) AS t LEFT JOIN wv ON TRUE\nGROUP BY t ORDER BY t"
+ },
+ "et_wtp_region": {
+  "title": "Ethiopia thresholds by region and zone",
+  "description": "Per region and zone: valid price answers, median extra ETB per quintal, median premium, share at 25% or more, median yield gain and sample note. Reads et_wtp and et_interview_meta.",
+  "params": [
+   "ew_gender",
+   "ew_region",
+   "ew_role",
+   "ew_typology",
+   "ew_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{ew_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{ew_region}} AS STRING)) AND (CAST({{ew_zone}} AS STRING) IS NULL OR zone_name = CAST({{ew_zone}} AS STRING))\n    AND (CAST({{ew_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{ew_gender}} AS STRING)) AND (CAST({{ew_role}} AS STRING) IS NULL OR respondent_role = CAST({{ew_role}} AS STRING)) AND (CAST({{ew_typology}} AS STRING) IS NULL OR typology = CAST({{ew_typology}} AS STRING))\n  GROUP BY hhid\n),\nw AS (SELECT w.*, hh.respondent_gender, hh.region, hh.zone FROM `{DS}.et_wtp` w JOIN hh USING (hhid)),\nwv AS (SELECT * FROM w WHERE wtp_response_valid),\nyv AS (SELECT * FROM w WHERE yield_response_valid),\nx AS (\n  SELECT IFNULL(w.region, 'Not recorded') AS region_label, IFNULL(w.zone, 'Not recorded') AS zone_label, w.*,\n    PERCENTILE_CONT(IF(wtp_response_valid, wtp_premium, NULL), 0.5) OVER p AS med_premium,\n    PERCENTILE_CONT(IF(wtp_response_valid, maximum_extra_wtp_birr_per_qt, NULL), 0.5) OVER p AS med_extra,\n    PERCENTILE_CONT(IF(yield_response_valid, yield_gain_needed, NULL), 0.5) OVER p AS med_yield\n  FROM w\n  WINDOW p AS (PARTITION BY IFNULL(w.region, 'Not recorded'), IFNULL(w.zone, 'Not recorded'))\n)\nSELECT region_label || ' · ' || zone_label AS row_key, region_label AS region, zone_label AS zone,\n  COUNTIF(wtp_response_valid) AS valid_price_n,\n  ANY_VALUE(med_extra) AS median_extra_wtp,\n  ANY_VALUE(med_premium) AS median_premium,\n  SAFE_DIVIDE(COUNTIF(wtp_response_valid AND wtp_premium >= 0.25), COUNTIF(wtp_response_valid)) AS share_25_plus,\n  ANY_VALUE(med_yield) AS median_yield_gain,\n  IF(COUNTIF(tradeoff_response_valid) < 10, FORMAT(\"Directional (n=%'d)\", COUNTIF(tradeoff_response_valid)), FORMAT(\"n=%'d\", COUNTIF(tradeoff_response_valid))) AS sample_note\nFROM x GROUP BY region_label, zone_label\nORDER BY region_label, zone_label"
+ },
+ "et_wtp_yield": {
+  "title": "Ethiopia minimum yield gain",
+  "description": "Farmers by the minimum extra yield they need from hybrid wheat, as a share of valid yield answers. Reads et_wtp and et_interview_meta.",
+  "params": [
+   "ew_gender",
+   "ew_region",
+   "ew_role",
+   "ew_typology",
+   "ew_zone"
+  ],
+  "sql": "WITH hh AS (\n  SELECT hhid, ANY_VALUE(respondent_gender) AS respondent_gender, ANY_VALUE(admin1_state_region) AS region, ANY_VALUE(zone_name) AS zone\n  FROM `{DS}.et_interview_meta`\n  WHERE hhid IS NOT NULL AND (CAST({{ew_region}} AS STRING) IS NULL OR admin1_state_region = CAST({{ew_region}} AS STRING)) AND (CAST({{ew_zone}} AS STRING) IS NULL OR zone_name = CAST({{ew_zone}} AS STRING))\n    AND (CAST({{ew_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{ew_gender}} AS STRING)) AND (CAST({{ew_role}} AS STRING) IS NULL OR respondent_role = CAST({{ew_role}} AS STRING)) AND (CAST({{ew_typology}} AS STRING) IS NULL OR typology = CAST({{ew_typology}} AS STRING))\n  GROUP BY hhid\n),\nw AS (SELECT w.*, hh.respondent_gender, hh.region, hh.zone FROM `{DS}.et_wtp` w JOIN hh USING (hhid)),\nwv AS (SELECT * FROM w WHERE wtp_response_valid),\nyv AS (SELECT * FROM w WHERE yield_response_valid)\nSELECT yield_gain_band, yield_gain_band_sort, COUNT(*) AS farmers,\n  SAFE_DIVIDE(COUNT(*), (SELECT COUNT(*) FROM yv)) AS band_share\nFROM yv GROUP BY 1, 2 ORDER BY yield_gain_band_sort"
+ },
+ "la_opts": {
+  "title": "LATAM filter choices",
+  "description": "Countries, departments, genders, respondent roles, concepts and currencies in the LATAM maize data. Reads latam_respondents and latam_concepts.",
+  "params": [],
+  "sql": "SELECT 'country' AS field, country AS value, 0 AS ord FROM `{DS}.latam_respondents` GROUP BY 2\nUNION ALL SELECT 'dept', department, 0 FROM `{DS}.latam_respondents` GROUP BY 2\nUNION ALL SELECT 'gender', respondent_gender, 0 FROM `{DS}.latam_respondents` GROUP BY 2\nUNION ALL SELECT 'segment', respondent_segment, 0 FROM `{DS}.latam_respondents` GROUP BY 2\nUNION ALL SELECT 'concept', concept, CAST(MIN(concept_code) AS INT64) FROM `{DS}.latam_concepts` GROUP BY 2\nUNION ALL SELECT 'pref', concept_preferred, 0 FROM `{DS}.latam_respondents` GROUP BY 2\nUNION ALL SELECT 'currency', wtp_currency, 0 FROM `{DS}.latam_respondents` GROUP BY 2\nORDER BY field, ord, value"
+ },
+ "la_tr_heat": {
+  "title": "LATAM attractive traits by concept",
+  "description": "Per concept and trait: share of exposures to the concept in which the respondent named the trait attractive. Reads latam_concept_traits and latam_respondents.",
+  "params": [
+   "la_concept",
+   "la_country",
+   "la_dept",
+   "la_gender",
+   "la_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{la_country}} AS STRING) IS NULL OR country = CAST({{la_country}} AS STRING)) AND (CAST({{la_dept}} AS STRING) IS NULL OR department = CAST({{la_dept}} AS STRING))\n    AND (CAST({{la_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{la_gender}} AS STRING)) AND (CAST({{la_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{la_segment}} AS STRING))\n),\nlc AS (SELECT c.* FROM `{DS}.latam_concepts` c JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR c.concept = CAST({{la_concept}} AS STRING))),\nlt AS (SELECT t.* FROM `{DS}.latam_concept_traits` t JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR t.concept = CAST({{la_concept}} AS STRING))),\nby_concept AS (\n  SELECT concept, COUNT(DISTINCT response_id) AS respondents,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS preferred_share,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_least_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS least_share\n  FROM lc GROUP BY concept\n),\ne AS (SELECT concept, COUNT(DISTINCT exposure_id) AS exposures FROM lt GROUP BY concept)\nSELECT lt.concept || ' · ' || lt.trait AS row_key, lt.concept, MIN(lt.concept_code) AS concept_code, lt.trait,\n  ANY_VALUE(lt.trait_group) AS trait_group, CAST(MIN(lt.trait_code) AS INT64) AS trait_order,\n  ANY_VALUE(e.exposures) AS exposures,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(lt.selected, lt.exposure_id, NULL)), ANY_VALUE(e.exposures)) AS attractive_share\nFROM lt JOIN e USING (concept)\nGROUP BY lt.concept, lt.trait\nORDER BY concept_code, trait_order"
+ },
+ "la_tr_kpi": {
+  "title": "LATAM concept headline figures",
+  "description": "Respondents exposed to concepts, full exposures, the most preferred concept and its share, interest in trying, and attractive traits named per exposure. Reads latam_concepts, latam_concept_traits and latam_respondents.",
+  "params": [
+   "la_concept",
+   "la_country",
+   "la_dept",
+   "la_gender",
+   "la_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{la_country}} AS STRING) IS NULL OR country = CAST({{la_country}} AS STRING)) AND (CAST({{la_dept}} AS STRING) IS NULL OR department = CAST({{la_dept}} AS STRING))\n    AND (CAST({{la_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{la_gender}} AS STRING)) AND (CAST({{la_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{la_segment}} AS STRING))\n),\nlc AS (SELECT c.* FROM `{DS}.latam_concepts` c JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR c.concept = CAST({{la_concept}} AS STRING))),\nlt AS (SELECT t.* FROM `{DS}.latam_concept_traits` t JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR t.concept = CAST({{la_concept}} AS STRING))),\nby_concept AS (\n  SELECT concept, COUNT(DISTINCT response_id) AS respondents,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS preferred_share,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_least_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS least_share\n  FROM lc GROUP BY concept\n)\nSELECT\n  (SELECT COUNT(DISTINCT response_id) FROM lc) AS concept_respondents,\n  (SELECT COUNTIF(shown_in_full) FROM lc) AS exposures,\n  IFNULL((SELECT concept FROM by_concept ORDER BY preferred_share DESC, concept LIMIT 1), 'No data') AS leading_concept,\n  (SELECT MAX(preferred_share) FROM by_concept) AS leading_preferred_share,\n  SAFE_DIVIDE((SELECT COUNT(DISTINCT IF(interested_trial, response_id, NULL)) FROM lc),\n              (SELECT COUNT(DISTINCT IF(trial_interest_score IS NOT NULL, response_id, NULL)) FROM lc)) AS interested_trying,\n  SAFE_DIVIDE((SELECT COUNTIF(selected) FROM lt), (SELECT COUNT(DISTINCT exposure_id) FROM lt)) AS avg_attractive_traits"
+ },
+ "la_tr_pref": {
+  "title": "LATAM most and least preferred concept",
+  "description": "Per concept: respondents who saw it, and the shares who chose it as most and as least preferred. Reads latam_concepts and latam_respondents.",
+  "params": [
+   "la_concept",
+   "la_country",
+   "la_dept",
+   "la_gender",
+   "la_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{la_country}} AS STRING) IS NULL OR country = CAST({{la_country}} AS STRING)) AND (CAST({{la_dept}} AS STRING) IS NULL OR department = CAST({{la_dept}} AS STRING))\n    AND (CAST({{la_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{la_gender}} AS STRING)) AND (CAST({{la_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{la_segment}} AS STRING))\n),\nlc AS (SELECT c.* FROM `{DS}.latam_concepts` c JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR c.concept = CAST({{la_concept}} AS STRING))),\nlt AS (SELECT t.* FROM `{DS}.latam_concept_traits` t JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR t.concept = CAST({{la_concept}} AS STRING))),\nby_concept AS (\n  SELECT concept, COUNT(DISTINCT response_id) AS respondents,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS preferred_share,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_least_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS least_share\n  FROM lc GROUP BY concept\n)\nSELECT concept, respondents, preferred_share, least_share FROM by_concept ORDER BY preferred_share DESC, concept"
+ },
+ "la_tr_table": {
+  "title": "LATAM concept evidence by country",
+  "description": "Per country and concept: respondents exposed, preferred and least-preferred shares, interest in trying and in replacing their variety, and a sample note. Reads latam_concepts and latam_respondents.",
+  "params": [
+   "la_concept",
+   "la_country",
+   "la_dept",
+   "la_gender",
+   "la_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{la_country}} AS STRING) IS NULL OR country = CAST({{la_country}} AS STRING)) AND (CAST({{la_dept}} AS STRING) IS NULL OR department = CAST({{la_dept}} AS STRING))\n    AND (CAST({{la_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{la_gender}} AS STRING)) AND (CAST({{la_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{la_segment}} AS STRING))\n),\nlc AS (SELECT c.* FROM `{DS}.latam_concepts` c JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR c.concept = CAST({{la_concept}} AS STRING))),\nlt AS (SELECT t.* FROM `{DS}.latam_concept_traits` t JOIN lr USING (response_id) WHERE (CAST({{la_concept}} AS STRING) IS NULL OR t.concept = CAST({{la_concept}} AS STRING))),\nby_concept AS (\n  SELECT concept, COUNT(DISTINCT response_id) AS respondents,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS preferred_share,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_least_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS least_share\n  FROM lc GROUP BY concept\n)\nSELECT country || ' · ' || concept AS row_key, country, concept,\n  COUNT(DISTINCT response_id) AS exposed,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(is_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS preferred_share,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(is_least_preferred, response_id, NULL)), COUNT(DISTINCT response_id)) AS least_share,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(interested_trial, response_id, NULL)), COUNT(DISTINCT IF(trial_interest_score IS NOT NULL, response_id, NULL))) AS try_share,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(interested_replace, response_id, NULL)), COUNT(DISTINCT IF(replace_interest_score IS NOT NULL, response_id, NULL))) AS replace_share,\n  IF(COUNT(DISTINCT response_id) < 10, FORMAT(\"Directional (n=%'d)\", COUNT(DISTINCT response_id)), FORMAT(\"n=%'d\", COUNT(DISTINCT response_id))) AS evidence\nFROM lc GROUP BY country, concept ORDER BY country, concept"
+ },
+ "lw_bands": {
+  "title": "LATAM premium bands",
+  "description": "Valid premiums for the preferred concept by band, as a share of all valid premiums. Reads latam_respondents.",
+  "params": [
+   "lw_country",
+   "lw_currency",
+   "lw_dept",
+   "lw_gender",
+   "lw_pref",
+   "lw_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{lw_country}} AS STRING) IS NULL OR country = CAST({{lw_country}} AS STRING)) AND (CAST({{lw_dept}} AS STRING) IS NULL OR department = CAST({{lw_dept}} AS STRING))\n    AND (CAST({{lw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{lw_gender}} AS STRING)) AND (CAST({{lw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{lw_segment}} AS STRING)) AND (CAST({{lw_pref}} AS STRING) IS NULL OR concept_preferred = CAST({{lw_pref}} AS STRING)) AND (CAST({{lw_currency}} AS STRING) IS NULL OR wtp_currency = CAST({{lw_currency}} AS STRING))\n),\nlv AS (SELECT * FROM lr WHERE premium_valid)\nSELECT premium_band, premium_band_sort, COUNT(DISTINCT response_id) AS respondents,\n  SAFE_DIVIDE(COUNT(DISTINCT response_id), (SELECT COUNT(DISTINCT response_id) FROM lv)) AS band_share\nFROM lv GROUP BY 1, 2 ORDER BY premium_band_sort"
+ },
+ "lw_concept": {
+  "title": "LATAM median premium by preferred concept",
+  "description": "Median premium and valid premiums per preferred concept. Reads latam_respondents.",
+  "params": [
+   "lw_country",
+   "lw_currency",
+   "lw_dept",
+   "lw_gender",
+   "lw_pref",
+   "lw_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{lw_country}} AS STRING) IS NULL OR country = CAST({{lw_country}} AS STRING)) AND (CAST({{lw_dept}} AS STRING) IS NULL OR department = CAST({{lw_dept}} AS STRING))\n    AND (CAST({{lw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{lw_gender}} AS STRING)) AND (CAST({{lw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{lw_segment}} AS STRING)) AND (CAST({{lw_pref}} AS STRING) IS NULL OR concept_preferred = CAST({{lw_pref}} AS STRING)) AND (CAST({{lw_currency}} AS STRING) IS NULL OR wtp_currency = CAST({{lw_currency}} AS STRING))\n),\nlv AS (SELECT * FROM lr WHERE premium_valid)\nSELECT concept_preferred, COUNT(DISTINCT response_id) AS valid_premiums, ANY_VALUE(m) AS median_premium\nFROM (SELECT lv.*, PERCENTILE_CONT(premium, 0.5) OVER (PARTITION BY concept_preferred) AS m FROM lv)\nGROUP BY concept_preferred ORDER BY median_premium DESC"
+ },
+ "lw_kpi": {
+  "title": "LATAM WTP headline figures",
+  "description": "Valid premiums, median premium for the preferred concept, share at 25% or more, share who would pay more, and median maximum and current prices per currency. Reads latam_respondents.",
+  "params": [
+   "lw_country",
+   "lw_currency",
+   "lw_dept",
+   "lw_gender",
+   "lw_pref",
+   "lw_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{lw_country}} AS STRING) IS NULL OR country = CAST({{lw_country}} AS STRING)) AND (CAST({{lw_dept}} AS STRING) IS NULL OR department = CAST({{lw_dept}} AS STRING))\n    AND (CAST({{lw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{lw_gender}} AS STRING)) AND (CAST({{lw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{lw_segment}} AS STRING)) AND (CAST({{lw_pref}} AS STRING) IS NULL OR concept_preferred = CAST({{lw_pref}} AS STRING)) AND (CAST({{lw_currency}} AS STRING) IS NULL OR wtp_currency = CAST({{lw_currency}} AS STRING))\n),\nlv AS (SELECT * FROM lr WHERE premium_valid),\ncur AS (\n  SELECT wtp_currency,\n    ANY_VALUE(mx) AS med_max, ANY_VALUE(mc) AS med_cur\n  FROM (\n    SELECT wtp_currency,\n      PERCENTILE_CONT(wtp_max_price, 0.5) OVER (PARTITION BY wtp_currency) AS mx,\n      PERCENTILE_CONT(IF(premium_valid, price_current, NULL), 0.5) OVER (PARTITION BY wtp_currency) AS mc\n    FROM lr WHERE wtp_currency <> 'Not recorded'\n  ) GROUP BY wtp_currency\n)\nSELECT\n  (SELECT COUNT(DISTINCT response_id) FROM lv) AS valid_premiums,\n  (SELECT COUNT(DISTINCT response_id) FROM lr) AS respondents,\n  FORMAT(\"%'d / %'d\", (SELECT COUNT(DISTINCT response_id) FROM lv), (SELECT COUNT(DISTINCT response_id) FROM lr)) AS valid_respondents,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(premium, 0.5) OVER () AS m FROM lv WHERE TRUE)) AS median_premium,\n  SAFE_DIVIDE((SELECT COUNT(DISTINCT IF(premium >= 0.25, response_id, NULL)) FROM lv), (SELECT COUNT(DISTINCT response_id) FROM lv)) AS share_25_plus,\n  SAFE_DIVIDE((SELECT COUNT(DISTINCT IF(wtp_comparison = 'More for this product', response_id, NULL)) FROM lr),\n              (SELECT COUNT(DISTINCT IF(wtp_comparison <> 'Not recorded', response_id, NULL)) FROM lr)) AS would_pay_more,\n  IFNULL((SELECT STRING_AGG(FORMAT('%s %s', REGEXP_REPLACE(FORMAT(\"%'.1f\", med_max), r'\\.0$', ''), wtp_currency), '  |  ' ORDER BY wtp_currency) FROM cur WHERE med_max IS NOT NULL), 'No prices') AS median_max_price,\n  IFNULL((SELECT STRING_AGG(FORMAT('%s %s', REGEXP_REPLACE(FORMAT(\"%'.1f\", med_cur), r'\\.0$', ''), wtp_currency), '  |  ' ORDER BY wtp_currency) FROM cur WHERE med_cur IS NOT NULL), 'No prices') AS median_current_price,\n  'Premium = (maximum price for the preferred concept - current seed price) / current price, same currency and reference unit (kg, lb or bag). '\n    || FORMAT(\"%'d valid premiums from %'d respondents. \", (SELECT COUNT(DISTINCT response_id) FROM lv), (SELECT COUNT(DISTINCT response_id) FROM lr))\n    || 'Price cards list one median per currency (GTQ, HNL, USD) per purchase unit, not per kg; currencies are never converted or pooled.' AS context"
+ },
+ "lw_reach": {
+  "title": "LATAM respondents at each premium",
+  "description": "Share of valid premiums at or above each signed premium for the preferred concept. Reads latam_respondents.",
+  "params": [
+   "lw_country",
+   "lw_currency",
+   "lw_dept",
+   "lw_gender",
+   "lw_pref",
+   "lw_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{lw_country}} AS STRING) IS NULL OR country = CAST({{lw_country}} AS STRING)) AND (CAST({{lw_dept}} AS STRING) IS NULL OR department = CAST({{lw_dept}} AS STRING))\n    AND (CAST({{lw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{lw_gender}} AS STRING)) AND (CAST({{lw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{lw_segment}} AS STRING)) AND (CAST({{lw_pref}} AS STRING) IS NULL OR concept_preferred = CAST({{lw_pref}} AS STRING)) AND (CAST({{lw_currency}} AS STRING) IS NULL OR wtp_currency = CAST({{lw_currency}} AS STRING))\n),\nlv AS (SELECT * FROM lr WHERE premium_valid)\nSELECT t AS premium_threshold,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(lv.premium >= t, lv.response_id, NULL)), (SELECT COUNT(DISTINCT response_id) FROM lv)) AS reach_share\nFROM UNNEST([-1.0, -0.75, -0.5, -0.25, -0.1, 0.0, 0.1, 0.2, 0.25, 0.3, 0.5, 0.75, 1.0]) AS t LEFT JOIN lv ON TRUE\nGROUP BY t ORDER BY t"
+ },
+ "lw_trait": {
+  "title": "LATAM premium by attractive trait",
+  "description": "Per trait named attractive for the respondent's preferred concept: valid premiums, median, 25th and 75th percentile premium, share at 25% or more, and a sample note. Reads latam_concept_traits and latam_respondents.",
+  "params": [
+   "lw_country",
+   "lw_currency",
+   "lw_dept",
+   "lw_gender",
+   "lw_pref",
+   "lw_segment"
+  ],
+  "sql": "WITH lr AS (\n  SELECT * FROM `{DS}.latam_respondents`\n  WHERE (CAST({{lw_country}} AS STRING) IS NULL OR country = CAST({{lw_country}} AS STRING)) AND (CAST({{lw_dept}} AS STRING) IS NULL OR department = CAST({{lw_dept}} AS STRING))\n    AND (CAST({{lw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{lw_gender}} AS STRING)) AND (CAST({{lw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{lw_segment}} AS STRING)) AND (CAST({{lw_pref}} AS STRING) IS NULL OR concept_preferred = CAST({{lw_pref}} AS STRING)) AND (CAST({{lw_currency}} AS STRING) IS NULL OR wtp_currency = CAST({{lw_currency}} AS STRING))\n),\nlv AS (SELECT * FROM lr WHERE premium_valid),\nnamed AS (\n  SELECT DISTINCT t.trait_group, t.trait, t.response_id\n  FROM `{DS}.latam_concept_traits` t\n  WHERE t.selected AND t.is_preferred_concept\n),\nx AS (\n  SELECT n.trait_group, n.trait, lv.response_id, lv.premium,\n    PERCENTILE_CONT(lv.premium, 0.5) OVER g AS med, PERCENTILE_CONT(lv.premium, 0.25) OVER g AS p25,\n    PERCENTILE_CONT(lv.premium, 0.75) OVER g AS p75\n  FROM named n JOIN lv USING (response_id)\n  WINDOW g AS (PARTITION BY n.trait)\n)\nSELECT trait, ANY_VALUE(trait_group) AS trait_group, COUNT(DISTINCT response_id) AS respondents,\n  ANY_VALUE(med) AS median_premium, ANY_VALUE(p25) AS p25, ANY_VALUE(p75) AS p75,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(premium >= 0.25, response_id, NULL)), COUNT(DISTINCT response_id)) AS share_25_plus,\n  IF(COUNT(DISTINCT response_id) < 10, FORMAT(\"Directional (n=%'d)\", COUNT(DISTINCT response_id)), FORMAT(\"n=%'d\", COUNT(DISTINCT response_id))) AS evidence\nFROM x GROUP BY trait ORDER BY trait_group, median_premium DESC"
+ },
+ "p_crop": {
+  "title": "Interviews by crop",
+  "description": "Completed interviews per crop; a respondent can count under more than one. Reads survey_coverage and survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n)\nSELECT c.crop, COUNT(DISTINCT c.portfolio_id) AS interviews\nFROM cov_r c JOIN resp r USING (portfolio_id)\nWHERE r.usable_response\nGROUP BY c.crop\nORDER BY interviews DESC, crop"
+ },
+ "p_crop_form": {
+  "title": "Crops represented in interviews",
+  "description": "Completed interviews per crop and survey form, with submissions that trade a crop without a recorded role. Reads survey_coverage and survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n)\nSELECT c.crop, f.survey_form_name, f.survey_form_order,\n  COUNT(DISTINCT IF(r.usable_response, c.portfolio_id, NULL)) AS interviews,\n  COUNT(DISTINCT c.portfolio_id) AS submissions,\n  COUNT(DISTINCT IF(r.crop_role_inconsistency, c.portfolio_id, NULL)) AS crop_role_alerts\nFROM cov_r c JOIN resp r USING (portfolio_id) JOIN forms f ON f.survey_form_id = r.survey_form_id\nGROUP BY 1, 2, 3\nHAVING interviews > 0\nORDER BY interviews DESC"
+ },
+ "p_cumulative": {
+  "title": "Cumulative usable records",
+  "description": "Usable records per survey form per day and their running total, with each form's target. Reads survey_responses and survey_forms.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n),\nlf AS (SELECT f.survey_form_id, f.survey_form_name, f.survey_form_order, f.target_responses, f.target_status\n       FROM forms f WHERE f.survey_form_id IN (SELECT survey_form_id FROM live)),\ndaily AS (\n  SELECT survey_form_id, monitoring_date AS day, COUNT(DISTINCT IF(usable_response, portfolio_id, NULL)) AS n\n  FROM resp WHERE monitoring_date IS NOT NULL GROUP BY 1, 2\n),\nspan AS (SELECT MIN(day) AS d0, LEAST(MAX(day), CURRENT_DATE('Africa/Nairobi')) AS d1 FROM daily),\ngrid AS (SELECT lf.*, day FROM lf, span, UNNEST(GENERATE_DATE_ARRAY(span.d0, span.d1)) AS day)\nSELECT g.survey_form_id, g.survey_form_name, g.survey_form_order, g.day,\n  IFNULL(d.n, 0) AS daily_usable,\n  SUM(IFNULL(d.n, 0)) OVER (PARTITION BY g.survey_form_id ORDER BY g.day) AS cumulative_usable,\n  g.target_responses AS target,\n  IF(g.target_responses IS NULL, 'Target not configured', FORMAT(\"%'d\", g.target_responses) || ' | ' || IFNULL(g.target_status, 'See survey-form register')) AS target_status\nFROM grid g LEFT JOIN daily d USING (survey_form_id, day)\nORDER BY g.survey_form_order, g.day"
+ },
+ "p_enumerators": {
+  "title": "Enumerator and facilitator activity",
+  "description": "Per survey form and fieldworker: submissions loaded, pilot or training records, usable records, daily average, median minutes and latest submission. Reads survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n),\nx AS (\n  SELECT r.*, f.survey_form_name,\n    PERCENTILE_CONT(IF(r.duration_min > 0, r.duration_min, NULL), 0.5) OVER (PARTITION BY r.survey_form_id, r.enumerator_name) AS med\n  FROM resp r JOIN forms f USING (survey_form_id)\n)\nSELECT survey_form_name || ' · ' || enumerator_name AS row_key, survey_form_name, enumerator_name,\n  COUNT(*) AS loaded,\n  COUNTIF(completion_status = 'Pilot / training / test') AS pilot_training,\n  COUNT(DISTINCT IF(usable_response, portfolio_id, NULL)) AS usable,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(usable_response, portfolio_id, NULL)), COUNT(DISTINCT IF(usable_response, monitoring_date, NULL))) AS daily_average,\n  ANY_VALUE(med) AS median_min,\n  FORMAT_DATETIME('%d %b %Y %H:%M', MAX(submission_at)) AS latest\nFROM x\nGROUP BY survey_form_name, enumerator_name\nORDER BY survey_form_name, loaded DESC"
+ },
+ "p_gender_form": {
+  "title": "Gender composition by survey form",
+  "description": "Usable records per survey form by respondent gender, with the female share among known gender. Reads survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n),\ng AS (\n  SELECT f.survey_form_name, f.survey_form_order, r.respondent_gender, COUNT(DISTINCT r.portfolio_id) AS usable\n  FROM resp r JOIN forms f USING (survey_form_id)\n  WHERE r.usable_response AND r.survey_form_id IN (SELECT survey_form_id FROM live)\n  GROUP BY 1, 2, 3\n)\nSELECT survey_form_name, survey_form_order, respondent_gender, usable,\n  SAFE_DIVIDE(SUM(IF(respondent_gender = 'Female', usable, 0)) OVER w, SUM(IF(respondent_gender IN ('Female', 'Male'), usable, 0)) OVER w) AS female_share_known,\n  SAFE_DIVIDE(SUM(IF(respondent_gender IN ('Female', 'Male'), usable, 0)) OVER w, SUM(usable) OVER w) AS gender_coverage\nFROM g\nWINDOW w AS (PARTITION BY survey_form_name)\nORDER BY survey_form_order, respondent_gender"
+ },
+ "p_geo": {
+  "title": "Usable records by geography",
+  "description": "Usable records, submissions and districts reached per country and first-level area, split by survey form. Reads survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n)\nSELECT r.geography_label, f.survey_form_name, f.survey_form_order,\n  COUNT(DISTINCT IF(r.usable_response, r.portfolio_id, NULL)) AS usable,\n  COUNT(*) AS submissions,\n  COUNT(DISTINCT IF(r.usable_response AND r.admin2 <> 'Not recorded', r.admin2, NULL)) AS districts,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(r.usable_response, r.portfolio_id, NULL)), COUNT(*)) AS usable_rate\nFROM resp r JOIN forms f USING (survey_form_id)\nWHERE r.survey_form_id IN (SELECT survey_form_id FROM live)\nGROUP BY 1, 2, 3\nORDER BY geography_label, survey_form_order"
+ },
+ "p_geo_gender": {
+  "title": "Respondent profile by geography and gender",
+  "description": "Usable records per country and first-level area by gender, with quality alerts. Reads survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n),\ng AS (\n  SELECT r.geography_label, r.respondent_gender,\n    COUNT(DISTINCT IF(r.usable_response, r.portfolio_id, NULL)) AS usable,\n    COUNT(DISTINCT IF(r.quality_issue, r.portfolio_id, NULL)) AS quality_alerts\n  FROM resp r WHERE r.survey_form_id IN (SELECT survey_form_id FROM live)\n  GROUP BY 1, 2\n)\nSELECT geography_label, respondent_gender, usable, quality_alerts,\n  SAFE_DIVIDE(SUM(IF(respondent_gender IN ('Female', 'Male'), usable, 0)) OVER w, SUM(usable) OVER w) AS gender_coverage\nFROM g\nWHERE usable > 0 OR quality_alerts > 0\nWINDOW w AS (PARTITION BY geography_label)\nORDER BY geography_label, respondent_gender"
+ },
+ "p_kpis": {
+  "title": "Portfolio headline figures",
+  "description": "Completed interviews, submissions, usable records, profile shares and connection status for the filtered survey forms. Reads survey_forms, source_status, survey_responses and survey_coverage.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n),\nru AS (SELECT * FROM resp WHERE survey_form_id IN (SELECT survey_form_id FROM live)),\nk AS (\n  SELECT\n    (SELECT COUNTIF(connection_valid) FROM src) AS connected,\n    (SELECT COUNTIF(monitoring_enabled) FROM forms) AS monitored,\n    (SELECT SUM(rows_not_loaded) FROM src) AS rows_not_loaded,\n    (SELECT SUM(server_submissions) FROM src) AS server_submissions,\n    (SELECT COUNT(DISTINCT portfolio_id) FROM resp WHERE usable_response) AS completed,\n    (SELECT COUNT(*) FROM ru) AS submissions,\n    (SELECT COUNT(DISTINCT portfolio_id) FROM ru WHERE usable_response) AS usable,\n    (SELECT COUNTIF(completion_status = 'Pilot / training / test') FROM resp) AS pilots,\n    (SELECT COUNT(DISTINCT f.study_id) FROM resp r JOIN forms f USING (survey_form_id) WHERE r.usable_response) AS studies,\n    (SELECT COUNT(DISTINCT f.country) FROM resp r JOIN forms f USING (survey_form_id) WHERE r.usable_response) AS countries,\n    (SELECT COUNT(DISTINCT c.crop) FROM cov_r c JOIN resp r USING (portfolio_id) WHERE r.usable_response AND c.crop <> 'Crop not recorded') AS crops,\n    (SELECT MAX(submission_at) FROM resp) AS last_at,\n    (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(duration_min, 0.5) OVER () AS m FROM resp WHERE duration_min > 0)) AS median_duration,\n    (SELECT COUNT(DISTINCT portfolio_id) FROM ru WHERE usable_response AND respondent_gender = 'Female') AS female,\n    (SELECT COUNT(DISTINCT portfolio_id) FROM ru WHERE usable_response AND respondent_gender IN ('Female', 'Male')) AS gender_known,\n    (SELECT COUNT(DISTINCT portfolio_id) FROM ru WHERE usable_response AND respondent_age IS NOT NULL) AS age_known,\n    (SELECT AVG(respondent_age) FROM resp WHERE usable_response) AS avg_age,\n    (SELECT COUNT(DISTINCT admin1) FROM resp WHERE usable_response AND admin1 <> 'Not recorded') AS regions,\n    (SELECT COUNT(DISTINCT r.portfolio_id) FROM ru r JOIN forms f USING (survey_form_id) WHERE r.usable_response AND f.survey_form_type = 'Listing') AS listing,\n    (SELECT COUNTIF(f.survey_form_type = 'Listing' AND s.connection_valid) FROM forms f JOIN src s USING (survey_form_id)) AS listing_sources\n)\nSELECT\n  IF(connected = 0, NULL, completed) AS completed_interviews,\n  IF(connected = 0, NULL, studies) AS studies_with_interviews,\n  IF(connected = 0, NULL, countries) AS countries_reached,\n  IF(connected = 0, NULL, crops) AS crops_represented,\n  IF(connected = 0, 'Source unavailable', IF(last_at IS NULL, 'No submissions yet', FORMAT_DATETIME('%d %b %Y %H:%M', last_at) || ' EAT')) AS latest_submission,\n  IF(monitored = 0 OR connected = 0, NULL, submissions) AS submissions_loaded,\n  IF(monitored = 0 OR connected = 0, NULL, usable) AS usable_records,\n  server_submissions,\n  median_duration AS median_duration_min,\n  SAFE_DIVIDE(female, gender_known) AS female_share_known,\n  avg_age AS average_age,\n  SAFE_DIVIDE(age_known, usable) AS age_coverage,\n  regions AS regions_reached,\n  IF(listing_sources = 0, NULL, listing) AS listing_records,\n  CASE\n    WHEN monitored = 0 THEN 'Selected survey is not connected yet'\n    WHEN connected = 0 THEN 'Data unavailable - check SurveyCTO connection'\n    WHEN connected < monitored THEN FORMAT('Partial coverage - %d of %d monitored sources connected', connected, monitored)\n    WHEN IFNULL(rows_not_loaded, 0) > 0 THEN FORMAT('Partial load - %d server records not loaded', rows_not_loaded)\n    WHEN completed = 0 THEN 'Connected - no matching completed interviews'\n    ELSE 'All monitored sources connected'\n  END || IF(pilots > 0, FORMAT('. %d LATAM pilot/training submissions are loaded but excluded from completed interviews and target progress.', pilots), '') AS connection_note\nFROM k"
+ },
+ "p_map": {
+  "title": "Interviews by map cell",
+  "description": "Usable interviews per 0.5-degree grid cell; cells with fewer than 5 are left out. Reads survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n)\nSELECT map_cell, ANY_VALUE(r.map_latitude) AS lat, ANY_VALUE(r.map_longitude) AS lon, f.country,\n  COUNT(DISTINCT r.portfolio_id) AS interviews\nFROM resp r JOIN forms f USING (survey_form_id)\nWHERE r.usable_response AND r.map_cell IS NOT NULL\nGROUP BY map_cell, f.country\nHAVING interviews >= 5\nORDER BY interviews DESC"
+ },
+ "p_opts": {
+  "title": "Portfolio filter choices",
+  "description": "Values for the portfolio filters: countries, studies, survey forms, stakeholders, crops, genders and regions. Reads survey_forms, survey_coverage and survey_responses.",
+  "params": [],
+  "sql": "SELECT 'country' AS field, country AS value, country AS label, '' AS grp, MIN(study_order) AS ord FROM `{DS}.survey_forms` GROUP BY 2\nUNION ALL SELECT 'study', study_id, study_short_name, '', MIN(study_order) FROM `{DS}.survey_forms` GROUP BY study_id, study_short_name\nUNION ALL SELECT 'form', survey_form_id, survey_form_name, study_short_name, survey_form_order FROM `{DS}.survey_forms`\nUNION ALL SELECT 'stakeholder', stakeholder, stakeholder, '', 0 FROM `{DS}.survey_coverage` GROUP BY 2\nUNION ALL SELECT 'crop', crop, crop, '', 0 FROM `{DS}.survey_coverage` GROUP BY 2\nUNION ALL SELECT 'gender', respondent_gender, respondent_gender, '', 0 FROM `{DS}.survey_responses` GROUP BY 2\nUNION ALL SELECT 'region', admin1, admin1, SPLIT(ANY_VALUE(geography_label), ' | ')[OFFSET(0)], 0 FROM `{DS}.survey_responses` GROUP BY 2\nORDER BY field, ord, label"
+ },
+ "p_profile": {
+  "title": "Profile availability by survey form",
+  "description": "Per survey form: usable records, female share, gender and age coverage, average age, regions and source status. Reads survey_forms, source_status and survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n),\na AS (\n  SELECT survey_form_id,\n    COUNT(DISTINCT IF(usable_response, portfolio_id, NULL)) AS usable,\n    COUNT(DISTINCT IF(usable_response AND respondent_gender = 'Female', portfolio_id, NULL)) AS female,\n    COUNT(DISTINCT IF(usable_response AND respondent_gender IN ('Female', 'Male'), portfolio_id, NULL)) AS gender_known,\n    COUNT(DISTINCT IF(usable_response AND respondent_age IS NOT NULL, portfolio_id, NULL)) AS age_known,\n    AVG(IF(usable_response, respondent_age, NULL)) AS avg_age,\n    COUNT(DISTINCT IF(usable_response AND admin1 <> 'Not recorded', admin1, NULL)) AS regions\n  FROM resp GROUP BY survey_form_id\n)\nSELECT f.survey_form_name, f.respondent_unit,\n  IF(l.survey_form_id IS NULL, NULL, IFNULL(a.usable, 0)) AS usable,\n  SAFE_DIVIDE(a.female, a.gender_known) AS female_share,\n  SAFE_DIVIDE(a.gender_known, a.usable) AS gender_coverage,\n  a.avg_age AS average_age,\n  SAFE_DIVIDE(a.age_known, a.usable) AS age_coverage,\n  a.regions,\n  COALESCE(s.source_state, f.source_readiness) AS source_status\nFROM forms f\nLEFT JOIN a USING (survey_form_id)\nLEFT JOIN src s USING (survey_form_id)\nLEFT JOIN live l USING (survey_form_id)\nORDER BY f.survey_form_order"
+ },
+ "p_segment": {
+  "title": "Interviews by respondent role",
+  "description": "Submissions and usable records per respondent role or segment and survey form. Reads survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n)\nSELECT r.respondent_segment, f.survey_form_name, f.survey_form_order,\n  COUNT(*) AS submissions,\n  COUNT(DISTINCT IF(r.usable_response, r.portfolio_id, NULL)) AS usable,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(r.usable_response, r.portfolio_id, NULL)), COUNT(*)) AS usable_rate\nFROM resp r JOIN forms f USING (survey_form_id)\nWHERE r.survey_form_id IN (SELECT survey_form_id FROM live)\nGROUP BY 1, 2, 3\nORDER BY usable DESC"
+ },
+ "p_stakeholder": {
+  "title": "Interviews by stakeholder",
+  "description": "Completed interviews per stakeholder group; a respondent can count under more than one. Reads survey_coverage and survey_responses.",
+  "params": [
+   "p_country",
+   "p_crop",
+   "p_end",
+   "p_form",
+   "p_gender",
+   "p_region",
+   "p_stakeholder",
+   "p_start",
+   "p_study"
+  ],
+  "sql": "WITH forms AS (\n  SELECT * FROM `{DS}.survey_forms`\n  WHERE (CAST({{p_country}} AS STRING) IS NULL OR country = CAST({{p_country}} AS STRING)) AND (CAST({{p_study}} AS STRING) IS NULL OR study_id = CAST({{p_study}} AS STRING)) AND (CAST({{p_form}} AS STRING) IS NULL OR survey_form_id = CAST({{p_form}} AS STRING))\n),\ncov AS (\n  SELECT * FROM `{DS}.survey_coverage`\n  WHERE (CAST({{p_crop}} AS STRING) IS NULL OR crop = CAST({{p_crop}} AS STRING)) AND (CAST({{p_stakeholder}} AS STRING) IS NULL OR stakeholder = CAST({{p_stakeholder}} AS STRING))\n),\nresp AS (\n  SELECT r.* FROM `{DS}.survey_responses` r JOIN forms f USING (survey_form_id)\n  WHERE (CAST({{p_gender}} AS STRING) IS NULL OR r.respondent_gender = CAST({{p_gender}} AS STRING)) AND (CAST({{p_region}} AS STRING) IS NULL OR r.admin1 = CAST({{p_region}} AS STRING))\n    AND (CAST({{p_start}} AS DATE) IS NULL OR r.monitoring_date >= CAST({{p_start}} AS DATE))\n    AND (CAST({{p_end}} AS DATE) IS NULL OR r.monitoring_date <= CAST({{p_end}} AS DATE))\n    AND r.portfolio_id IN (SELECT portfolio_id FROM cov)\n),\ncov_r AS (SELECT c.* FROM cov c JOIN resp r USING (portfolio_id)),\nsrc AS (SELECT s.* FROM `{DS}.source_status` s JOIN forms f USING (survey_form_id)),\nlive AS (  -- forms whose numbers show: monitored and connected (DAX returns BLANK otherwise)\n  SELECT f.survey_form_id FROM forms f JOIN src s USING (survey_form_id)\n  WHERE f.monitoring_enabled AND s.connection_valid\n)\nSELECT c.stakeholder, COUNT(DISTINCT c.portfolio_id) AS interviews\nFROM cov_r c JOIN resp r USING (portfolio_id)\nWHERE r.usable_response\nGROUP BY c.stakeholder\nORDER BY interviews DESC, stakeholder"
+ },
+ "refresh": {
+  "title": "Data refresh log",
+  "description": "When the SurveyCTO sync last loaded data, in East Africa Time, and whether the latest run succeeded. Reads refresh_log.",
+  "params": [],
+  "sql": "SELECT\n  FORMAT_DATETIME('%d %b %Y %H:%M', MAX(IF(ok, loaded_at_eat, NULL))) || ' EAT' AS data_loaded_eat,\n  ARRAY_AGG(ok ORDER BY finished_at_utc DESC LIMIT 1)[OFFSET(0)] AS last_run_ok,\n  ARRAY_AGG(message IGNORE NULLS ORDER BY finished_at_utc DESC LIMIT 1)[SAFE_OFFSET(0)] AS last_error\nFROM `{DS}.refresh_log`"
+ },
+ "tz_opts": {
+  "title": "Tanzania filter choices",
+  "description": "Regions, districts, genders, actor types, crops and paired products in the Tanzania main survey. Reads tz_market_main and tz_wtp_products.",
+  "params": [],
+  "sql": "SELECT 'region' AS field, admin1 AS value, 0 AS ord FROM `{DS}.tz_market_main` WHERE usable_response GROUP BY 2\nUNION ALL SELECT 'district', admin2, 0 FROM `{DS}.tz_market_main` WHERE usable_response GROUP BY 2\nUNION ALL SELECT 'gender', respondent_gender, 0 FROM `{DS}.tz_market_main` WHERE usable_response GROUP BY 2\nUNION ALL SELECT 'segment', respondent_segment, 0 FROM `{DS}.tz_market_main` WHERE usable_response GROUP BY 2\nUNION ALL SELECT 'crop', crop_profile, 0 FROM `{DS}.tz_market_main` WHERE usable_response GROUP BY 2\nUNION ALL SELECT 'product', product, MIN(product_sort) FROM `{DS}.tz_wtp_products` GROUP BY 2\nORDER BY field, ord, value"
+ },
+ "tz_tr_kpi": {
+  "title": "Tanzania trait headline figures",
+  "description": "Market actors with trait rankings, share giving three distinct ranks, the trait most often in actors' top three, WTP coverage and median stated premium. Reads tz_traits, tz_wtp and tz_market_main.",
+  "params": [
+   "tz_crop",
+   "tz_district",
+   "tz_gender",
+   "tz_region",
+   "tz_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tz_region}} AS STRING) IS NULL OR admin1 = CAST({{tz_region}} AS STRING)) AND (CAST({{tz_district}} AS STRING) IS NULL OR admin2 = CAST({{tz_district}} AS STRING))\n    AND (CAST({{tz_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tz_gender}} AS STRING)) AND (CAST({{tz_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tz_segment}} AS STRING))\n    AND (CAST({{tz_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tz_crop}} AS STRING))\n),\ntr AS (SELECT t.* FROM `{DS}.tz_traits` t JOIN mm USING (response_id)),\ntw AS (SELECT w.* FROM `{DS}.tz_wtp` w JOIN mm USING (response_id)),\nn AS (SELECT COUNT(DISTINCT response_id) AS respondents FROM tr),\nby_trait AS (\n  SELECT trait, SAFE_DIVIDE(COUNT(DISTINCT IF(selected, response_id, NULL)), ANY_VALUE(n.respondents)) AS top3_share,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_first, response_id, NULL)), ANY_VALUE(n.respondents)) AS first_share\n  FROM tr, n GROUP BY trait\n)\nSELECT n.respondents AS trait_respondents,\n  SAFE_DIVIDE((SELECT COUNT(DISTINCT IF(three_distinct_ranks, response_id, NULL)) FROM tr), n.respondents) AS three_rank_share,\n  (SELECT trait FROM by_trait ORDER BY top3_share DESC, trait LIMIT 1) AS leading_trait,\n  (SELECT MAX(top3_share) FROM by_trait) AS leading_top3_share,\n  SAFE_DIVIDE((SELECT COUNTIF(valid_premium) FROM tw), (SELECT COUNT(DISTINCT response_id) FROM tw)) AS wtp_coverage,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(wtp_premium, 0.5) OVER () AS m FROM tw WHERE wtp_premium IS NOT NULL)) AS median_premium\nFROM n"
+ },
+ "tz_tr_table": {
+  "title": "Tanzania crop-specific trait evidence",
+  "description": "Per crop and trait: actors ranking that crop, share placing the trait in their top three, and a sample note. Reads tz_traits and tz_market_main.",
+  "params": [
+   "tz_crop",
+   "tz_district",
+   "tz_gender",
+   "tz_region",
+   "tz_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tz_region}} AS STRING) IS NULL OR admin1 = CAST({{tz_region}} AS STRING)) AND (CAST({{tz_district}} AS STRING) IS NULL OR admin2 = CAST({{tz_district}} AS STRING))\n    AND (CAST({{tz_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tz_gender}} AS STRING)) AND (CAST({{tz_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tz_segment}} AS STRING))\n    AND (CAST({{tz_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tz_crop}} AS STRING))\n),\ntr AS (SELECT t.* FROM `{DS}.tz_traits` t JOIN mm USING (response_id)),\ntw AS (SELECT w.* FROM `{DS}.tz_wtp` w JOIN mm USING (response_id)),\nn AS (SELECT COUNT(DISTINCT response_id) AS respondents FROM tr),\nby_trait AS (\n  SELECT trait, SAFE_DIVIDE(COUNT(DISTINCT IF(selected, response_id, NULL)), ANY_VALUE(n.respondents)) AS top3_share,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_first, response_id, NULL)), ANY_VALUE(n.respondents)) AS first_share\n  FROM tr, n GROUP BY trait\n),\nc AS (SELECT crop, COUNT(DISTINCT response_id) AS actors FROM tr GROUP BY crop)\nSELECT tr.crop || ' · ' || tr.trait AS row_key, tr.crop, tr.trait, ANY_VALUE(c.actors) AS actors,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(tr.selected, tr.response_id, NULL)), ANY_VALUE(c.actors)) AS top3_share,\n  IF(ANY_VALUE(c.actors) < 10, FORMAT(\"Directional (n=%'d)\", ANY_VALUE(c.actors)), FORMAT(\"n=%'d\", ANY_VALUE(c.actors))) AS evidence\nFROM tr JOIN c USING (crop)\nGROUP BY tr.crop, tr.trait\nHAVING top3_share > 0\nORDER BY crop, top3_share DESC"
+ },
+ "tz_tr_traits": {
+  "title": "Tanzania traits in top three and first",
+  "description": "Per trait name across crops: share of ranking actors placing it in their top three, and share ranking it first. Reads tz_traits and tz_market_main.",
+  "params": [
+   "tz_crop",
+   "tz_district",
+   "tz_gender",
+   "tz_region",
+   "tz_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tz_region}} AS STRING) IS NULL OR admin1 = CAST({{tz_region}} AS STRING)) AND (CAST({{tz_district}} AS STRING) IS NULL OR admin2 = CAST({{tz_district}} AS STRING))\n    AND (CAST({{tz_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tz_gender}} AS STRING)) AND (CAST({{tz_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tz_segment}} AS STRING))\n    AND (CAST({{tz_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tz_crop}} AS STRING))\n),\ntr AS (SELECT t.* FROM `{DS}.tz_traits` t JOIN mm USING (response_id)),\ntw AS (SELECT w.* FROM `{DS}.tz_wtp` w JOIN mm USING (response_id)),\nn AS (SELECT COUNT(DISTINCT response_id) AS respondents FROM tr),\nby_trait AS (\n  SELECT trait, SAFE_DIVIDE(COUNT(DISTINCT IF(selected, response_id, NULL)), ANY_VALUE(n.respondents)) AS top3_share,\n    SAFE_DIVIDE(COUNT(DISTINCT IF(is_first, response_id, NULL)), ANY_VALUE(n.respondents)) AS first_share\n  FROM tr, n GROUP BY trait\n)\nSELECT trait, top3_share, first_share FROM by_trait\nWHERE top3_share > 0 OR first_share > 0\nORDER BY top3_share DESC, trait"
+ },
+ "tz_wtp_bands": {
+  "title": "Tanzania paired premium bands",
+  "description": "Complete pairs for the chosen product by premium band, as a share of all complete pairs. Reads tz_wtp_products and tz_market_main.",
+  "params": [
+   "tw_crop",
+   "tw_district",
+   "tw_gender",
+   "tw_product",
+   "tw_region",
+   "tw_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tw_region}} AS STRING) IS NULL OR admin1 = CAST({{tw_region}} AS STRING)) AND (CAST({{tw_district}} AS STRING) IS NULL OR admin2 = CAST({{tw_district}} AS STRING))\n    AND (CAST({{tw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tw_gender}} AS STRING)) AND (CAST({{tw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tw_segment}} AS STRING))\n    AND (CAST({{tw_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tw_crop}} AS STRING))\n),\npp AS (\n  SELECT p.*, mm.respondent_segment FROM `{DS}.tz_wtp_products` p JOIN mm USING (response_id)\n  WHERE p.product = CAST({{tw_product}} AS STRING)\n),\npv AS (SELECT * FROM pp WHERE valid_pair)\nSELECT premium_band, premium_band_sort, COUNT(DISTINCT response_id) AS actors,\n  SAFE_DIVIDE(COUNT(DISTINCT response_id), (SELECT COUNT(DISTINCT response_id) FROM pv)) AS band_share\nFROM pv GROUP BY 1, 2 ORDER BY premium_band_sort"
+ },
+ "tz_wtp_kpi": {
+  "title": "Tanzania paired-price headline figures",
+  "description": "For the chosen product: complete price pairs, median premium or discount against its baseline, share at 25% or more, and median baseline, product and difference in TZS/kg. Reads tz_wtp_products and tz_market_main.",
+  "params": [
+   "tw_crop",
+   "tw_district",
+   "tw_gender",
+   "tw_product",
+   "tw_region",
+   "tw_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tw_region}} AS STRING) IS NULL OR admin1 = CAST({{tw_region}} AS STRING)) AND (CAST({{tw_district}} AS STRING) IS NULL OR admin2 = CAST({{tw_district}} AS STRING))\n    AND (CAST({{tw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tw_gender}} AS STRING)) AND (CAST({{tw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tw_segment}} AS STRING))\n    AND (CAST({{tw_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tw_crop}} AS STRING))\n),\npp AS (\n  SELECT p.*, mm.respondent_segment FROM `{DS}.tz_wtp_products` p JOIN mm USING (response_id)\n  WHERE p.product = CAST({{tw_product}} AS STRING)\n),\npv AS (SELECT * FROM pp WHERE valid_pair)\nSELECT\n  (SELECT COUNT(DISTINCT response_id) FROM pv) AS paired_respondents,\n  (SELECT COUNT(DISTINCT response_id) FROM pp) AS eligible_actors,\n  FORMAT(\"%'d / %'d\", (SELECT COUNT(DISTINCT response_id) FROM pv), (SELECT COUNT(DISTINCT response_id) FROM pp)) AS pairs_actors,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(paired_premium, 0.5) OVER () AS m FROM pv WHERE TRUE)) AS median_premium,\n  SAFE_DIVIDE((SELECT COUNT(DISTINCT IF(paired_premium >= 0.25, response_id, NULL)) FROM pv), (SELECT COUNT(DISTINCT response_id) FROM pv)) AS share_25_plus,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(baseline_price_tzs_kg, 0.5) OVER () AS m FROM pv WHERE TRUE)) AS median_baseline,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(extra_wtp_tzs_kg, 0.5) OVER () AS m FROM pv WHERE TRUE)) AS median_difference,\n  (SELECT ANY_VALUE(m) FROM (SELECT PERCENTILE_CONT(product_price_tzs_kg, 0.5) OVER () AS m FROM pv WHERE TRUE)) AS median_product_price,\n  CASE\n    WHEN CAST({{tw_product}} AS STRING) IS NULL THEN 'Select one product to compare its business buying price with the matching baseline. Different products are not pooled.'\n    WHEN (SELECT COUNT(*) FROM pp) = 0 THEN 'No matching actors for this product and the current filters. Clear filters or select another product.'\n    WHEN NOT (SELECT LOGICAL_AND(mapping_ready) FROM pp) THEN 'Groundnut comparison pending: the supplied V23 form has no paired baseline and aflatoxin-free price variables.'\n    ELSE 'Baseline: ' || (SELECT ANY_VALUE(baseline) FROM pp) || ' (' || (SELECT ANY_VALUE(baseline_variable) FROM pp) || '). Premium = (product price - baseline price) / baseline price. Both prices are TZS/kg.'\n  END AS context"
+ },
+ "tz_wtp_reach": {
+  "title": "Tanzania actors at each price difference",
+  "description": "Share of complete pairs at or above each signed price difference against the baseline, for the chosen product. Reads tz_wtp_products and tz_market_main.",
+  "params": [
+   "tw_crop",
+   "tw_district",
+   "tw_gender",
+   "tw_product",
+   "tw_region",
+   "tw_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tw_region}} AS STRING) IS NULL OR admin1 = CAST({{tw_region}} AS STRING)) AND (CAST({{tw_district}} AS STRING) IS NULL OR admin2 = CAST({{tw_district}} AS STRING))\n    AND (CAST({{tw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tw_gender}} AS STRING)) AND (CAST({{tw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tw_segment}} AS STRING))\n    AND (CAST({{tw_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tw_crop}} AS STRING))\n),\npp AS (\n  SELECT p.*, mm.respondent_segment FROM `{DS}.tz_wtp_products` p JOIN mm USING (response_id)\n  WHERE p.product = CAST({{tw_product}} AS STRING)\n),\npv AS (SELECT * FROM pp WHERE valid_pair)\nSELECT t AS premium_threshold,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(pv.paired_premium >= t, pv.response_id, NULL)), (SELECT COUNT(DISTINCT response_id) FROM pv)) AS reach_share\nFROM UNNEST([-1.0, -0.75, -0.5, -0.25, -0.1, 0.0, 0.1, 0.2, 0.25, 0.3, 0.5, 0.75, 1.0]) AS t LEFT JOIN pv ON TRUE\nGROUP BY t ORDER BY t"
+ },
+ "tz_wtp_segment": {
+  "title": "Tanzania paired premium by actor",
+  "description": "Median paired premium or discount per market-actor type for the chosen product. Reads tz_wtp_products and tz_market_main.",
+  "params": [
+   "tw_crop",
+   "tw_district",
+   "tw_gender",
+   "tw_product",
+   "tw_region",
+   "tw_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tw_region}} AS STRING) IS NULL OR admin1 = CAST({{tw_region}} AS STRING)) AND (CAST({{tw_district}} AS STRING) IS NULL OR admin2 = CAST({{tw_district}} AS STRING))\n    AND (CAST({{tw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tw_gender}} AS STRING)) AND (CAST({{tw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tw_segment}} AS STRING))\n    AND (CAST({{tw_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tw_crop}} AS STRING))\n),\npp AS (\n  SELECT p.*, mm.respondent_segment FROM `{DS}.tz_wtp_products` p JOIN mm USING (response_id)\n  WHERE p.product = CAST({{tw_product}} AS STRING)\n),\npv AS (SELECT * FROM pp WHERE valid_pair)\nSELECT respondent_segment, ANY_VALUE(m) AS median_premium, COUNT(DISTINCT response_id) AS pairs\nFROM (SELECT pv.*, PERCENTILE_CONT(paired_premium, 0.5) OVER (PARTITION BY respondent_segment) AS m FROM pv)\nGROUP BY respondent_segment ORDER BY median_premium DESC"
+ },
+ "tz_wtp_table": {
+  "title": "Tanzania paired premiums by segment",
+  "description": "Per crop and actor type for the chosen product: complete pairs, median, 25th and 75th percentile premium, share at 25% or more, and a sample note. Reads tz_wtp_products and tz_market_main.",
+  "params": [
+   "tw_crop",
+   "tw_district",
+   "tw_gender",
+   "tw_product",
+   "tw_region",
+   "tw_segment"
+  ],
+  "sql": "WITH mm AS (\n  SELECT * FROM `{DS}.tz_market_main`\n  WHERE usable_response AND (CAST({{tw_region}} AS STRING) IS NULL OR admin1 = CAST({{tw_region}} AS STRING)) AND (CAST({{tw_district}} AS STRING) IS NULL OR admin2 = CAST({{tw_district}} AS STRING))\n    AND (CAST({{tw_gender}} AS STRING) IS NULL OR respondent_gender = CAST({{tw_gender}} AS STRING)) AND (CAST({{tw_segment}} AS STRING) IS NULL OR respondent_segment = CAST({{tw_segment}} AS STRING))\n    AND (CAST({{tw_crop}} AS STRING) IS NULL OR crop_profile = CAST({{tw_crop}} AS STRING))\n),\npp AS (\n  SELECT p.*, mm.respondent_segment FROM `{DS}.tz_wtp_products` p JOIN mm USING (response_id)\n  WHERE p.product = CAST({{tw_product}} AS STRING)\n),\npv AS (SELECT * FROM pp WHERE valid_pair),\nx AS (\n  SELECT pv.*,\n    PERCENTILE_CONT(paired_premium, 0.5) OVER g AS med, PERCENTILE_CONT(paired_premium, 0.25) OVER g AS p25,\n    PERCENTILE_CONT(paired_premium, 0.75) OVER g AS p75\n  FROM pv WINDOW g AS (PARTITION BY crop, respondent_segment)\n)\nSELECT crop || ' · ' || respondent_segment AS row_key, crop, respondent_segment,\n  COUNT(DISTINCT response_id) AS pairs, ANY_VALUE(med) AS median_premium, ANY_VALUE(p25) AS p25, ANY_VALUE(p75) AS p75,\n  SAFE_DIVIDE(COUNT(DISTINCT IF(paired_premium >= 0.25, response_id, NULL)), COUNT(DISTINCT response_id)) AS share_25_plus,\n  IF(COUNT(DISTINCT response_id) < 10, 'Preliminary; n=' || COUNT(DISTINCT response_id), FORMAT(\"n=%'d\", COUNT(DISTINCT response_id))) AS evidence\nFROM x GROUP BY crop, respondent_segment ORDER BY crop, respondent_segment"
+ }
+}
